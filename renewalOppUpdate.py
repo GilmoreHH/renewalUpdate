@@ -66,13 +66,85 @@ def connect_to_salesforce(start_date=None, end_date=None):
             end_date_str = end_date.strftime('%Y-%m-%d')
             date_filter = f"AND CloseDate >= {start_date_str} AND CloseDate <= {end_date_str}"
         
-        # Query to get renewals with Type and Account Manager details
-        query = f"""
+        # First approach: Query both Accounts and User information in one step
+        # Using a simple query that just gets the Account Manager's Name
+        account_query = """
+            SELECT 
+                Id, 
+                Name,
+                Account_Manager__c,
+                Account_Manager__r.Name
+            FROM Account
+            WHERE Account_Manager__c != null
+        """
+        
+        try:
+            # Also try a separate query to get user information
+            # Get User information that might be associated with the Account Manager
+            user_query = """
+                SELECT 
+                    Id,
+                    Name,
+                    FirstName,
+                    LastName
+                FROM User
+                WHERE IsActive = true
+            """
+            
+            # Execute both queries
+            account_results = sf.query_all(account_query)
+            user_results = sf.query_all(user_query)
+            
+            # Create a map of user names
+            user_map = {}
+            for user in user_results['records']:
+                # Create both full and partial name mappings for flexible matching
+                user_id = user['Id']
+                full_name = user['Name']
+                first_name = user.get('FirstName', '')
+                last_name = user.get('LastName', '')
+                
+                # Map all variations
+                user_map[user_id] = {'full_name': full_name, 'first_name': first_name, 'last_name': last_name}
+            
+            # Create a dictionary to map Account IDs to their Account Managers
+            account_manager_map = {}
+            for record in account_results['records']:
+                account_id = record['Id']
+                # Get the Account Manager name from the relationship
+                producer_name = record.get('Account_Manager__r', {}).get('Name', 'Not Assigned')
+                account_manager_map[account_id] = producer_name
+            
+        except Exception as e:
+            st.warning(f"Error in queries: {str(e)}")
+            # Fallback approach - just try the simplest query
+            fallback_query = """
+                SELECT 
+                    Id, 
+                    Name,
+                    Account_Manager__c,
+                    Account_Manager__r.Name
+                FROM Account
+                WHERE Account_Manager__c != null
+            """
+            
+            account_results = sf.query_all(fallback_query)
+            
+            # Create a dictionary to map Account IDs to their Account Managers (using just the Name)
+            account_manager_map = {}
+            for record in account_results['records']:
+                account_id = record['Id']
+                account_manager = record.get('Account_Manager__r', {}).get('Name', 'Not Assigned')
+                account_manager_map[account_id] = account_manager
+        
+        # Now query Opportunity records with Account relationship
+        opportunity_query = f"""
             SELECT 
                 Id, 
                 StageName, 
                 Type,
-                Account.Owner.Name, 
+                AccountId,
+                Account.Name,
                 New_Business_or_Renewal__c,
                 CloseDate
             FROM Opportunity
@@ -80,17 +152,18 @@ def connect_to_salesforce(start_date=None, end_date=None):
             {date_filter}
         """
         
-        results = sf.query_all(query)
+        opportunity_results = sf.query_all(opportunity_query)
         
         # Process results into a DataFrame
         data = []
-        for record in results['records']:
+        for record in opportunity_results['records']:
             stage_name = record['StageName']
             renewal_type = record['New_Business_or_Renewal__c']
             business_type = record.get('Type', 'Not Specified')
+            account_id = record['AccountId']
             
-            # Get account manager from the Account.Owner relationship
-            account_manager = record.get('Account', {}).get('Owner', {}).get('Name', 'Not Assigned')
+            # Get account manager from the account_manager_map
+            account_manager = account_manager_map.get(account_id, "Not Assigned")
             
             # Get stage category
             category = stage_metadata.get(stage_name, {"category": "Unknown"})["category"]
@@ -101,7 +174,8 @@ def connect_to_salesforce(start_date=None, end_date=None):
                 'RenewalType': renewal_type,
                 'BusinessType': business_type,
                 'AccountManager': account_manager,
-                'CloseDate': record['CloseDate']
+                'CloseDate': record['CloseDate'],
+                'AccountName': record.get('Account', {}).get('Name', 'Unknown Account')
             })
         
         # Create DataFrame
