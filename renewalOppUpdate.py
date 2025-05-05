@@ -37,6 +37,65 @@ def get_stage_metadata():
     }
     return stages
 
+# Define business type categories
+def get_business_type_categories():
+    """Return a dictionary mapping business types to their consolidated categories."""
+    type_categories = {
+        # Commercial
+        "Bond": "Commercial",
+        "Builders Risk/Installation CL": "Commercial",
+        "Bumbershoot": "Commercial",
+        "Business Owners": "Commercial",
+        "Commercial Auto": "Commercial",
+        "Commercial Package": "Commercial",
+        "Commercial Property": "Commercial",
+        "Commercial Umbrella": "Commercial",
+        "Crime": "Commercial",
+        "Cyber": "Commercial",
+        "D&O": "Commercial",
+        "Dwelling Fire CL": "Commercial",
+        "Errors and Omissions": "Commercial",
+        "Flood CL": "Commercial",
+        "General Liability": "Commercial",
+        "Inland Marine CL": "Commercial",
+        "Marine Package": "Commercial",
+        "Surety": "Commercial",
+        "Workers Compensation": "Commercial",
+        
+        # Homeowners
+        "Builders Risk/Installation PL": "Homeowners",
+        "Dwelling Fire PL": "Homeowners",
+        "Homeowners": "Homeowners",
+        "Mobile Homeowners": "Homeowners",
+        "Wind Only PL": "Homeowners",
+        
+        # Marine
+        "Charter Watercraft": "Marine",
+        "Watercraft": "Marine",
+        "Yacht": "Marine",
+        
+        # Flood
+        "Flood PL": "Flood",
+        
+        # Specialty Lines
+        "Golf Cart": "Specialty Lines",
+        "Inland Marine PL": "Specialty Lines",
+        "Motorcycle/ATV": "Specialty Lines",
+        "Motorhome": "Specialty Lines",
+        "Recreational Vehicle": "Specialty Lines",
+        "Travel Trailer": "Specialty Lines",
+        
+        # Life
+        "Life": "Life",
+        
+        # Auto
+        "Personal Auto": "Auto",
+        
+        # CPL/Excess CPL
+        "Personal Liability": "CPL/Excess CPL"
+    }
+    return type_categories
+
 # Function to get current ISO week
 def get_current_iso_week():
     """Calculate the ISO week number for the current date."""
@@ -58,6 +117,9 @@ def connect_to_salesforce(start_date=None, end_date=None):
         # Get stage metadata
         stage_metadata = get_stage_metadata()
         
+        # Get business type categories
+        type_categories = get_business_type_categories()
+        
         # Prepare date filter
         date_filter = ""
         if start_date and end_date:
@@ -66,85 +128,13 @@ def connect_to_salesforce(start_date=None, end_date=None):
             end_date_str = end_date.strftime('%Y-%m-%d')
             date_filter = f"AND CloseDate >= {start_date_str} AND CloseDate <= {end_date_str}"
         
-        # First approach: Query both Accounts and User information in one step
-        # Using a simple query that just gets the Account Manager's Name
-        account_query = """
-            SELECT 
-                Id, 
-                Name,
-                Account_Manager__c,
-                Account_Manager__r.Name
-            FROM Account
-            WHERE Account_Manager__c != null
-        """
-        
-        try:
-            # Also try a separate query to get user information
-            # Get User information that might be associated with the Account Manager
-            user_query = """
-                SELECT 
-                    Id,
-                    Name,
-                    FirstName,
-                    LastName
-                FROM User
-                WHERE IsActive = true
-            """
-            
-            # Execute both queries
-            account_results = sf.query_all(account_query)
-            user_results = sf.query_all(user_query)
-            
-            # Create a map of user names
-            user_map = {}
-            for user in user_results['records']:
-                # Create both full and partial name mappings for flexible matching
-                user_id = user['Id']
-                full_name = user['Name']
-                first_name = user.get('FirstName', '')
-                last_name = user.get('LastName', '')
-                
-                # Map all variations
-                user_map[user_id] = {'full_name': full_name, 'first_name': first_name, 'last_name': last_name}
-            
-            # Create a dictionary to map Account IDs to their Account Managers
-            account_manager_map = {}
-            for record in account_results['records']:
-                account_id = record['Id']
-                # Get the Account Manager name from the relationship
-                producer_name = record.get('Account_Manager__r', {}).get('Name', 'Not Assigned')
-                account_manager_map[account_id] = producer_name
-            
-        except Exception as e:
-            st.warning(f"Error in queries: {str(e)}")
-            # Fallback approach - just try the simplest query
-            fallback_query = """
-                SELECT 
-                    Id, 
-                    Name,
-                    Account_Manager__c,
-                    Account_Manager__r.Name
-                FROM Account
-                WHERE Account_Manager__c != null
-            """
-            
-            account_results = sf.query_all(fallback_query)
-            
-            # Create a dictionary to map Account IDs to their Account Managers (using just the Name)
-            account_manager_map = {}
-            for record in account_results['records']:
-                account_id = record['Id']
-                account_manager = record.get('Account_Manager__r', {}).get('Name', 'Not Assigned')
-                account_manager_map[account_id] = account_manager
-        
-        # Now query Opportunity records with Account relationship
-        opportunity_query = f"""
+        # Query to get renewals with Type and Account Manager details
+        query = f"""
             SELECT 
                 Id, 
                 StageName, 
                 Type,
-                AccountId,
-                Account.Name,
+                Account.Owner.Name, 
                 New_Business_or_Renewal__c,
                 CloseDate
             FROM Opportunity
@@ -152,30 +142,32 @@ def connect_to_salesforce(start_date=None, end_date=None):
             {date_filter}
         """
         
-        opportunity_results = sf.query_all(opportunity_query)
+        results = sf.query_all(query)
         
         # Process results into a DataFrame
         data = []
-        for record in opportunity_results['records']:
+        for record in results['records']:
             stage_name = record['StageName']
             renewal_type = record['New_Business_or_Renewal__c']
             business_type = record.get('Type', 'Not Specified')
-            account_id = record['AccountId']
             
-            # Get account manager from the account_manager_map
-            account_manager = account_manager_map.get(account_id, "Not Assigned")
+            # Get account manager from the Account.Owner relationship
+            account_manager = record.get('Account', {}).get('Owner', {}).get('Name', 'Not Assigned')
             
             # Get stage category
             category = stage_metadata.get(stage_name, {"category": "Unknown"})["category"]
+            
+            # Get business type category
+            business_type_category = type_categories.get(business_type, "Other")
             
             data.append({
                 'StageName': stage_name,
                 'StatusCategory': category,
                 'RenewalType': renewal_type,
                 'BusinessType': business_type,
+                'BusinessTypeCategory': business_type_category,
                 'AccountManager': account_manager,
-                'CloseDate': record['CloseDate'],
-                'AccountName': record.get('Account', {}).get('Name', 'Unknown Account')
+                'CloseDate': record['CloseDate']
             })
         
         # Create DataFrame
@@ -249,7 +241,7 @@ else:
 # View options
 view_by = st.sidebar.radio(
     "View Breakdown By",
-    ["Both", "Line of Business", "Account Manager"]
+    ["Both", "Line of Business", "Business Type Categories", "Account Manager"]
 )
 
 # Additional options
@@ -307,9 +299,64 @@ if not df.empty:
     ))
     st.plotly_chart(fig)
     
-    # Line of Business Analysis
+    # Business Type Category Analysis
+    if view_by in ["Both", "Business Type Categories"]:
+        st.header("Breakdown by Business Type Category")
+        
+        # Get counts by business type category and status
+        category_status_df = df.groupby(['BusinessTypeCategory', 'StatusCategory']).size().reset_index(name='Count')
+        
+        # Pivot for better visualization
+        category_pivot = category_status_df.pivot(index='BusinessTypeCategory', columns='StatusCategory', values='Count').fillna(0)
+        
+        # Ensure all categories exist
+        for category in ['Won', 'Lost', 'Open']:
+            if category not in category_pivot.columns:
+                category_pivot[category] = 0
+        
+        # Total by category
+        category_pivot['Total'] = category_pivot.sum(axis=1)
+        
+        # Calculate percentages
+        if show_percentages:
+            for category in ['Won', 'Lost', 'Open']:
+                category_pivot[f'{category}_Pct'] = (category_pivot[category] / category_pivot['Total'] * 100).round(1)
+        
+        # Stacked bar chart
+        fig = px.bar(
+            category_status_df,
+            x="BusinessTypeCategory",
+            y="Count",
+            color="StatusCategory",
+            title="Renewal Status by Business Type Category",
+            color_discrete_map={
+                "Won": "#2ecc71", 
+                "Lost": "#e74c3c",
+                "Open": "#f39c12"
+            },
+            barmode="stack"
+        )
+        fig.update_layout(xaxis_title="Business Type Category", yaxis_title="Number of Opportunities")
+        st.plotly_chart(fig)
+        
+        # Show data table
+        if show_data_table:
+            st.subheader("Business Type Category Breakdown")
+            display_df = category_pivot.reset_index()
+            
+            # Format the table
+            if show_percentages:
+                display_df = display_df[['BusinessTypeCategory', 'Won', 'Won_Pct', 'Lost', 'Lost_Pct', 'Open', 'Open_Pct', 'Total']]
+                display_df.columns = ['Business Type Category', 'Won', 'Won %', 'Lost', 'Lost %', 'Open', 'Open %', 'Total']
+            else:
+                display_df = display_df[['BusinessTypeCategory', 'Won', 'Lost', 'Open', 'Total']]
+                display_df.columns = ['Business Type Category', 'Won', 'Lost', 'Open', 'Total']
+            
+            st.dataframe(display_df)
+    
+    # Line of Business Analysis (Detailed Business Types)
     if view_by in ["Both", "Line of Business"]:
-        st.header("Breakdown by Line of Business")
+        st.header("Breakdown by Specific Business Type")
         
         # Get counts by business type and status
         lob_status_df = df.groupby(['BusinessType', 'StatusCategory']).size().reset_index(name='Count')
@@ -330,15 +377,22 @@ if not df.empty:
             for category in ['Won', 'Lost', 'Open']:
                 lob_pivot[f'{category}_Pct'] = (lob_pivot[category] / lob_pivot['Total'] * 100).round(1)
         
-        # Stacked bar chart
-        lob_melted = lob_status_df.copy()
+        # Sort by total for better visualization
+        lob_pivot = lob_pivot.sort_values('Total', ascending=False)
         
+        # Get top business types (top 15 for better visualization)
+        top_business_types = lob_pivot.head(15).index.tolist()
+        
+        # Filter for visualization
+        lob_melted_filtered = lob_status_df[lob_status_df['BusinessType'].isin(top_business_types)]
+        
+        # Stacked bar chart
         fig = px.bar(
-            lob_melted,
+            lob_melted_filtered,
             x="BusinessType",
             y="Count",
             color="StatusCategory",
-            title="Renewal Status by Line of Business",
+            title="Renewal Status by Specific Business Type (Top 15)",
             color_discrete_map={
                 "Won": "#2ecc71", 
                 "Lost": "#e74c3c",
@@ -346,21 +400,22 @@ if not df.empty:
             },
             barmode="stack"
         )
-        fig.update_layout(xaxis_title="Line of Business", yaxis_title="Number of Opportunities")
+        fig.update_layout(xaxis_title="Business Type", yaxis_title="Number of Opportunities")
+        fig.update_xaxes(tickangle=45)
         st.plotly_chart(fig)
         
         # Show data table
         if show_data_table:
-            st.subheader("Line of Business Breakdown")
+            st.subheader("Specific Business Type Breakdown")
             display_df = lob_pivot.reset_index()
             
             # Format the table
             if show_percentages:
                 display_df = display_df[['BusinessType', 'Won', 'Won_Pct', 'Lost', 'Lost_Pct', 'Open', 'Open_Pct', 'Total']]
-                display_df.columns = ['Line of Business', 'Won', 'Won %', 'Lost', 'Lost %', 'Open', 'Open %', 'Total']
+                display_df.columns = ['Business Type', 'Won', 'Won %', 'Lost', 'Lost %', 'Open', 'Open %', 'Total']
             else:
                 display_df = display_df[['BusinessType', 'Won', 'Lost', 'Open', 'Total']]
-                display_df.columns = ['Line of Business', 'Won', 'Lost', 'Open', 'Total']
+                display_df.columns = ['Business Type', 'Won', 'Lost', 'Open', 'Total']
             
             st.dataframe(display_df)
     
@@ -478,9 +533,42 @@ if not df.empty:
     
     # Combined Analysis
     if view_by == "Both":
-        st.header("Combined Analysis: Line of Business & Account Manager")
+        # Combined Analysis: Business Type Category & Account Manager
+        st.header("Combined Analysis: Business Type Category & Account Manager")
         
-        # Get top 5 account managers and top 5 lines of business
+        # Get top 5 account managers and business type categories
+        top_am = am_pivot.head(5).index.tolist()
+        
+        # Create cross-tabulation for heatmap
+        combined_df = df[df['AccountManager'].isin(top_am)]
+        
+        if not combined_df.empty:
+            cross_tab = pd.crosstab(
+                combined_df['AccountManager'], 
+                combined_df['BusinessTypeCategory'],
+                normalize=False
+            )
+            
+            # Heatmap
+            fig = px.imshow(
+                cross_tab,
+                text_auto=True,
+                aspect="auto",
+                title="Opportunity Count: Top Account Managers by Business Type Category",
+                color_continuous_scale=px.colors.sequential.Viridis
+            )
+            fig.update_layout(
+                xaxis_title="Business Type Category",
+                yaxis_title="Account Manager"
+            )
+            st.plotly_chart(fig)
+        else:
+            st.info("Not enough data for combined category analysis.")
+        
+        # Combined Analysis: Specific Business Type & Account Manager 
+        st.header("Combined Analysis: Specific Business Type & Account Manager")
+        
+        # Get top 5 account managers and top business types
         top_am = am_pivot.head(5).index.tolist()
         top_lob = lob_pivot.head(5).index.tolist()
         
@@ -501,16 +589,64 @@ if not df.empty:
                 cross_tab,
                 text_auto=True,
                 aspect="auto",
-                title="Opportunity Count: Top Account Managers by Top Lines of Business",
+                title="Opportunity Count: Top Account Managers by Top Business Types",
                 color_continuous_scale=px.colors.sequential.Viridis
             )
             fig.update_layout(
-                xaxis_title="Line of Business",
+                xaxis_title="Business Type",
                 yaxis_title="Account Manager"
             )
             st.plotly_chart(fig)
         else:
             st.info("Not enough data for combined analysis.")
+    
+    # Win Rate by Business Type Category
+    st.header("Win Rate by Business Type Category")
+    
+    # Group by business type category and status
+    cat_win_df = df.groupby(['BusinessTypeCategory', 'StatusCategory']).size().reset_index(name='Count')
+    
+    # Pivot to calculate win rates
+    cat_win_pivot = cat_win_df.pivot(index='BusinessTypeCategory', columns='StatusCategory', values='Count').fillna(0)
+    
+    # Ensure all categories exist
+    for category in ['Won', 'Lost', 'Open']:
+        if category not in cat_win_pivot.columns:
+            cat_win_pivot[category] = 0
+    
+    # Calculate win rate for each category
+    cat_win_pivot['Total_Closed'] = cat_win_pivot['Won'] + cat_win_pivot['Lost']
+    cat_win_pivot['Win_Rate'] = (cat_win_pivot['Won'] / cat_win_pivot['Total_Closed'] * 100).fillna(0).round(1)
+    
+    # Filter for categories with enough data (at least 5 closed opportunities)
+    cat_win_filtered = cat_win_pivot[cat_win_pivot['Total_Closed'] >= 5].copy()
+    
+    if not cat_win_filtered.empty:
+        # Sort by win rate
+        cat_win_filtered = cat_win_filtered.sort_values('Win_Rate', ascending=False)
+        
+        # Create bar chart
+        fig = px.bar(
+            cat_win_filtered.reset_index(),
+            x="BusinessTypeCategory",
+            y="Win_Rate",
+            title="Win Rate by Business Type Category (Minimum 5 Closed Opportunities)",
+            text="Win_Rate",
+            color="Win_Rate",
+            color_continuous_scale=px.colors.sequential.Viridis
+        )
+        fig.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+        fig.update_layout(xaxis_title="Business Type Category", yaxis_title="Win Rate (%)")
+        st.plotly_chart(fig)
+        
+        # Show data table
+        if show_data_table:
+            st.subheader("Win Rate by Business Type Category")
+            display_df = cat_win_filtered.reset_index()[['BusinessTypeCategory', 'Won', 'Lost', 'Total_Closed', 'Win_Rate']]
+            display_df.columns = ['Business Type Category', 'Won', 'Lost', 'Total Closed', 'Win Rate %']
+            st.dataframe(display_df)
+    else:
+        st.info("Not enough data to calculate meaningful win rates by business type category.")
     
     # Monthly trend analysis
     st.header("Monthly Renewal Trends")
@@ -534,6 +670,24 @@ if not df.empty:
             "Lost": "#e74c3c",
             "Open": "#f39c12"
         }
+    )
+    fig.update_layout(xaxis_title="Month", yaxis_title="Number of Opportunities")
+    st.plotly_chart(fig)
+    
+    # Monthly trends by business type category
+    st.subheader("Monthly Trends by Business Type Category")
+    
+    # Get counts by month and business type category
+    monthly_cat_df = df.groupby(['Month', 'BusinessTypeCategory']).size().reset_index(name='Count')
+    
+    # Create line chart for business type categories
+    fig = px.line(
+        monthly_cat_df,
+        x="Month",
+        y="Count",
+        color="BusinessTypeCategory",
+        title="Monthly Trends by Business Type Category",
+        markers=True
     )
     fig.update_layout(xaxis_title="Month", yaxis_title="Number of Opportunities")
     st.plotly_chart(fig)
