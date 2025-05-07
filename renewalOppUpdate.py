@@ -41,58 +41,65 @@ def get_stage_metadata():
 def get_business_type_categories():
     """Return a dictionary mapping business types to their consolidated categories."""
     type_categories = {
-        # Commercial
-        "Bond": "Commercial",
-        "Builders Risk/Installation CL": "Commercial",
-        "Bumbershoot": "Commercial",
-        "Business Owners": "Commercial",
-        "Commercial Auto": "Commercial",
-        "Commercial Package": "Commercial",
-        "Commercial Property": "Commercial",
-        "Commercial Umbrella": "Commercial",
-        "Crime": "Commercial",
-        "Cyber": "Commercial",
-        "D&O": "Commercial",
-        "Dwelling Fire CL": "Commercial",
-        "Errors and Omissions": "Commercial",
-        "Flood CL": "Commercial",
-        "General Liability": "Commercial",
-        "Inland Marine CL": "Commercial",
-        "Marine Package": "Commercial",
-        "Surety": "Commercial",
-        "Workers Compensation": "Commercial",
-        
-        # Homeowners
-        "Builders Risk/Installation PL": "Homeowners",
-        "Dwelling Fire PL": "Homeowners",
-        "Homeowners": "Homeowners",
-        "Mobile Homeowners": "Homeowners",
-        "Wind Only PL": "Homeowners",
-        
-        # Marine
-        "Charter Watercraft": "Marine",
-        "Watercraft": "Marine",
-        "Yacht": "Marine",
-        
-        # Flood
-        "Flood PL": "Flood",
-        
-        # Specialty Lines
-        "Golf Cart": "Specialty Lines",
-        "Inland Marine PL": "Specialty Lines",
-        "Motorcycle/ATV": "Specialty Lines",
-        "Motorhome": "Specialty Lines",
-        "Recreational Vehicle": "Specialty Lines",
-        "Travel Trailer": "Specialty Lines",
-        
-        # Life
-        "Life": "Life",
-        
-        # Auto
-        "Personal Auto": "Auto",
-        
-        # CPL/Excess CPL
-        "Personal Liability": "CPL/Excess CPL"
+    # Commercial
+    "Bond": "Commercial",
+    "Builders Risk/Installation CL": "Commercial",
+    "Bumbershoot": "Commercial",
+    "Business Owners": "Commercial",
+    "Commercial Auto": "Commercial",
+    "Commercial Package": "Commercial",
+    "Commercial Property": "Commercial",
+    "Commercial Umbrella": "Commercial",
+    "Crime": "Commercial",
+    "Cyber & Privacy Liability": "Commercial",
+    "Directors & Officers": "Commercial",
+    "Dwelling Fire CL": "Commercial",
+    "Errors and Omissions": "Commercial",
+    "Flood CL": "Commercial",
+    "General Liability": "Commercial",
+    "Inland Marine CL": "Commercial",
+    "Marine Package": "Commercial",
+    "Surety": "Commercial",
+    "Workers Compensation": "Commercial",
+    
+    # Homeowners
+    "Builders Risk/Installation PL": "Homeowners",
+    "Dwelling Fire PL": "Homeowners",
+    "Homeowners": "Homeowners",
+    "Mobile Homeowners": "Homeowners",
+    "Wind Only PL": "Homeowners",
+    
+    # Marine
+    "Charter Watercraft": "Marine",
+    "Watercraft": "Marine",
+    "Yacht": "Marine",
+    
+    # Flood
+    "Flood PL": "Flood",
+    
+    # Specialty Lines
+    "Golf Cart": "Specialty Lines",
+    "Inland Marine PL": "Specialty Lines",
+    "Motorcycle/ATV": "Specialty Lines",
+    "Motorhome": "Specialty Lines",
+    "Recreational Vehicle": "Specialty Lines",
+    "Travel Trailer": "Specialty Lines",
+    
+    # Life
+    "Life": "Life",
+    
+    # Auto
+    "Personal Auto": "Auto",
+    
+    # CPL/Excess CPL
+    "Personal Liability": "CPL/Excess CPL",
+    
+    # Other 
+    "Umbrella": "Other",
+    "Employment Practices Liability": "Other",
+    "Liquor Liability": "Other",
+    "Special Event Package": "Other",
+    "Wind Only - CL": "Other"
     }
     return type_categories
 
