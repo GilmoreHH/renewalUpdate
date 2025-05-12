@@ -61,6 +61,9 @@ def get_business_type_categories():
     "Marine Package": "Commercial",
     "Surety": "Commercial",
     "Workers Compensation": "Commercial",
+    "Employment Practices Liability": "Commercial;",
+    "Liquor Liability": "Commercial",
+    "Wind Only - CL": "Commercial",
     
     # Homeowners
     "Builders Risk/Installation PL": "Homeowners",
@@ -94,12 +97,8 @@ def get_business_type_categories():
     # CPL/Excess CPL
     "Personal Liability": "CPL/Excess CPL",
     
-    # Other 
-    "Umbrella": "Other",
-    "Employment Practices Liability": "Other",
-    "Liquor Liability": "Other",
-    "Special Event Package": "Other",
-    "Wind Only - CL": "Other"
+    # Umbrella 
+    "Umbrella": "Umbrella",
     }
     return type_categories
 
@@ -135,13 +134,13 @@ def connect_to_salesforce(start_date=None, end_date=None):
             end_date_str = end_date.strftime('%Y-%m-%d')
             date_filter = f"AND CloseDate >= {start_date_str} AND CloseDate <= {end_date_str}"
         
-        # Query to get renewals with Type and Account Manager details
-        query = f"""
+        # Step 1: First query to get renewals with Type and Account Manager IDs
+        opportunity_query = f"""
             SELECT 
                 Id, 
                 StageName, 
                 Type,
-                Account.Owner.Name, 
+                Account.Account_Manager__c, 
                 New_Business_or_Renewal__c,
                 CloseDate
             FROM Opportunity
@@ -149,17 +148,51 @@ def connect_to_salesforce(start_date=None, end_date=None):
             {date_filter}
         """
         
-        results = sf.query_all(query)
+        opportunity_results = sf.query_all(opportunity_query)
+        
+        # Extract unique Account Manager IDs from the opportunities
+        account_manager_ids = set()
+        for record in opportunity_results['records']:
+            account_manager_id = record.get('Account', {}).get('Account_Manager__c')
+            if account_manager_id:
+                account_manager_ids.add(account_manager_id)
+        
+        # Step 2: Only query producers who are actually assigned as Account Managers
+        if account_manager_ids:
+            account_manager_ids_str = "'" + "','".join(account_manager_ids) + "'"
+            producer_query = f"""
+                SELECT Id, Name, InternalUserId, InternalUser.FirstName, InternalUser.LastName 
+                FROM Producer 
+                WHERE Id IN ({account_manager_ids_str})
+            """
+            
+            producer_results = sf.query_all(producer_query)
+            
+            # Create a lookup dictionary for producers
+            producers = {}
+            for record in producer_results['records']:
+                producer_id = record['Id']
+                
+                # Check if InternalUser data is available
+                if record.get('InternalUser') and record['InternalUser'].get('FirstName') and record['InternalUser'].get('LastName'):
+                    producer_name = f"{record['InternalUser']['FirstName']} {record['InternalUser']['LastName']}"
+                else:
+                    producer_name = record['Name']
+                    
+                producers[producer_id] = producer_name
+        else:
+            producers = {}
         
         # Process results into a DataFrame
         data = []
-        for record in results['records']:
+        for record in opportunity_results['records']:
             stage_name = record['StageName']
             renewal_type = record['New_Business_or_Renewal__c']
             business_type = record.get('Type', 'Not Specified')
             
-            # Get account manager from the Account.Owner relationship
-            account_manager = record.get('Account', {}).get('Owner', {}).get('Name', 'Not Assigned')
+            # Get account manager from the Account.Account_Manager__c relationship
+            account_manager_id = record.get('Account', {}).get('Account_Manager__c')
+            account_manager = producers.get(account_manager_id, 'Not Assigned')
             
             # Get stage category
             category = stage_metadata.get(stage_name, {"category": "Unknown"})["category"]
