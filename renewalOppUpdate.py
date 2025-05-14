@@ -43,7 +43,7 @@ def get_business_type_categories():
     type_categories = {
     # Commercial
     "Bond": "Commercial",
-    "Builders Risk/Installation CL": "Commercial",
+    "Builders Risk/Installation - CL": "Commercial",
     "Bumbershoot": "Commercial",
     "Business Owners": "Commercial",
     "Commercial Auto": "Commercial",
@@ -55,7 +55,7 @@ def get_business_type_categories():
     "Directors & Officers": "Commercial",
     "Dwelling Fire CL": "Commercial",
     "Errors and Omissions": "Commercial",
-    "Flood CL": "Commercial",
+    "Flood - CL": "Commercial",
     "General Liability": "Commercial",
     "Inland Marine CL": "Commercial",
     "Marine Package": "Commercial",
@@ -66,11 +66,11 @@ def get_business_type_categories():
     "Wind Only - CL": "Commercial",
     
     # Homeowners
-    "Builders Risk/Installation PL": "Homeowners",
-    "Dwelling Fire PL": "Homeowners",
+    "Builders Risk/Installation - PL": "Homeowners",
+    "Dwelling Fire - PL": "Homeowners",
     "Homeowners": "Homeowners",
     "Mobile Homeowners": "Homeowners",
-    "Wind Only PL": "Homeowners",
+    "Wind Only - PL": "Homeowners",
     
     # Marine
     "Charter Watercraft": "Marine",
@@ -78,7 +78,7 @@ def get_business_type_categories():
     "Yacht": "Marine",
     
     # Flood
-    "Flood PL": "Flood",
+    "Flood - PL": "Flood",
     
     # Specialty Lines
     "Golf Cart": "Specialty Lines",
