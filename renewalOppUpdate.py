@@ -465,11 +465,11 @@ if not df.empty:
         st.header("Core Lines Analysis by Account Manager")
         st.info("Core Lines: Auto, Flood, Homeowners, Umbrella")
         
-        # Get core lines
+        # Get core lines (update the existing filter)
         core_lines = get_core_lines()
         
-        # Filter for core lines only
-        df_core = df[df['BusinessType'].isin(core_lines)]
+        # Filter for core lines only - ensure we have CloseDate for workload analysis
+        df_core = df[df['BusinessType'].isin(core_lines) & df['CloseDate'].notna()]
         
         if not df_core.empty:
             # Get counts by account manager and status (core lines only)
@@ -544,7 +544,131 @@ if not df.empty:
             
             # Core Lines vs All Lines Comparison
             st.subheader("Core Lines vs All Lines Win Rate Comparison")
+            # NEW: Core Lines Workload Allocation Report
+        st.header("Core Lines Workload Allocation by Account Manager")
+        st.info("Workload calculation: Flood policies count as 0.5, all other core lines count as 1.0")
+        
+        # Use the already filtered core lines data
+        if not df_core.empty:
+            # Create workload data from the already filtered df_core
+            df_core_workload = df_core.copy()
+            df_core_workload['CloseDate'] = pd.to_datetime(df_core_workload['CloseDate'])
+            df_core_workload['Month'] = df_core_workload['CloseDate'].dt.strftime('%Y-%m')
             
+            # Apply weighting: Flood = 0.5, others = 1.0
+            df_core_workload['WeightedCount'] = df_core_workload['BusinessType'].apply(
+                lambda x: 0.5 if x == 'Flood' else 1.0
+            )
+            
+            # Determine appropriate time grouping based on date range
+            date_diff = (end_date - start_date).days
+            
+            if date_diff <= 31:  # Less than a month - group by week or day
+                if date_diff <= 7:
+                    # Daily grouping for week or less
+                    df_core_workload['TimeGroup'] = df_core_workload['CloseDate'].dt.strftime('%Y-%m-%d')
+                    time_label = "Day"
+                else:
+                    # Weekly grouping for up to a month
+                    df_core_workload['TimeGroup'] = df_core_workload['CloseDate'].dt.strftime('%Y-W%U')
+                    time_label = "Week"
+            elif date_diff <= 365:  # Less than a year - group by month
+                df_core_workload['TimeGroup'] = df_core_workload['CloseDate'].dt.strftime('%Y-%m')
+                time_label = "Month"
+            else:  # More than a year - group by quarter
+                df_core_workload['TimeGroup'] = df_core_workload['CloseDate'].dt.to_period('Q').astype(str)
+                time_label = "Quarter"
+            
+            # Group by Account Manager, TimeGroup, and Business Type
+            workload_summary = df_core_workload.groupby(['AccountManager', 'TimeGroup', 'BusinessType']).agg({
+                'BusinessType': 'count',  # Count of opportunities
+                'WeightedCount': 'first'  # Get the weight
+            }).rename(columns={'BusinessType': 'Count'})
+            
+            # Apply the weighting to get actual weighted count
+            workload_summary['WeightedCount'] = workload_summary['Count'] * workload_summary['WeightedCount']
+            workload_summary = workload_summary.reset_index()
+            
+            # Calculate totals per account manager and time period
+            time_totals = workload_summary.groupby(['AccountManager', 'TimeGroup']).agg({
+                'Count': 'sum',
+                'WeightedCount': 'sum'
+            }).reset_index()
+            
+            # Create visualization with dynamic grouping
+            fig = px.bar(
+                time_totals,
+                x="TimeGroup",
+                y="WeightedCount",
+                color="AccountManager",
+                title=f"Core Lines Workload Allocation by {time_label} (Flood = 0.5 weight)<br>Period: {start_date.strftime('%b %d, %Y')} to {end_date.strftime('%b %d, %Y')}",
+                barmode="group"
+            )
+            fig.update_layout(xaxis_title=time_label, yaxis_title="Weighted Policy Count")
+            st.plotly_chart(fig)
+            
+            # Update the detailed breakdown to use dynamic grouping too
+            st.subheader(f"Detailed Workload Breakdown by {time_label}")
+            
+            # Create a comprehensive breakdown
+            detailed_breakdown = []
+            
+            for (manager, time_period), period_data in workload_summary.groupby(['AccountManager', 'TimeGroup']):
+                row = {
+                    'Account Manager': manager,
+                    time_label: time_period,
+                    'Auto': 0, 'Auto_Weighted': 0,
+                    'Flood': 0, 'Flood_Weighted': 0,
+                    'Homeowners': 0, 'Homeowners_Weighted': 0,
+                    'Umbrella': 0, 'Umbrella_Weighted': 0
+                }
+                
+                # Fill in actual values
+                for _, line_data in period_data.iterrows():
+                    line_type = line_data['BusinessType']
+                    count = line_data['Count']
+                    weighted = line_data['WeightedCount']
+                    
+                    if line_type in ['Auto', 'Flood', 'Homeowners', 'Umbrella']:
+                        row[line_type] = count
+                        row[f'{line_type}_Weighted'] = weighted
+                
+                # Calculate totals
+                row['Total_Count'] = sum([row['Auto'], row['Flood'], row['Homeowners'], row['Umbrella']])
+                row['Total_Weighted'] = sum([row['Auto_Weighted'], row['Flood_Weighted'], 
+                                           row['Homeowners_Weighted'], row['Umbrella_Weighted']])
+                
+                detailed_breakdown.append(row)
+            
+            if detailed_breakdown:
+                detailed_df = pd.DataFrame(detailed_breakdown)
+                detailed_df = detailed_df.sort_values([time_label, 'Account Manager'])
+                
+                # Format for display - show example like your requirement
+                display_cols = ['Account Manager', time_label, 'Homeowners', 'Flood', 'Auto', 'Umbrella', 'Total_Count', 'Total_Weighted']
+                detailed_display = detailed_df[display_cols].copy()
+                detailed_display.columns = ['Account Manager', time_label, 'Home', 'Flood', 'Auto', 'Umbrella', 'Total Count', 'Weighted Total']
+                
+                st.dataframe(detailed_display)
+                
+                # Show the calculation example
+                st.info("📊 **Example calculation:** If Jane Doe has Home: 200, Flood: 200, Auto: 200, Umbrella: 200 → Weighted Total = 700 (800 total minus half count for Flood: 200×0.5 = 100 reduction)")
+            
+            # Summary by Account Manager (across selected date range)
+            st.subheader(f"Account Manager Workload Summary ({start_date.strftime('%b %d, %Y')} - {end_date.strftime('%b %d, %Y')})")
+            
+            am_summary = time_totals.groupby('AccountManager').agg({
+                'Count': 'sum',
+                'WeightedCount': 'sum'
+            }).reset_index()
+            am_summary = am_summary.sort_values('WeightedCount', ascending=False)
+            am_summary.columns = ['Account Manager', 'Total Policies', 'Weighted Total']
+            am_summary['Workload Reduction'] = am_summary['Total Policies'] - am_summary['Weighted Total']
+            
+            st.dataframe(am_summary)
+            
+        else:
+            st.info(f"No core lines data available for the selected date range: {start_date.strftime('%b %d, %Y')} to {end_date.strftime('%b %d, %Y')}")
             # Merge the two datasets for comparison
             comparison_data = []
             
@@ -614,9 +738,9 @@ if not df.empty:
                     core_display_df.columns = ['Account Manager', 'Won', 'Lost', 'Open', 'Total', 'Win Rate %']
                 
                 st.dataframe(core_display_df)
-        else:
-            st.warning("No core lines data available for the selected date range.")
-    
+            else:
+                st.warning("No core lines data available for the selected date range.")
+        
     # Renewal Type Analysis
     st.header("Breakdown by Renewal Type")
     
