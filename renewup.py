@@ -54,10 +54,10 @@ def get_business_type_categories():
     "Cyber & Privacy Liability": "Commercial",
     "Directors & Officers": "Commercial",
     "Dwelling Fire CL": "Commercial",
-    "Errors and Omissions": "Commercial",
+    "Errors & Omissions": "Commercial",
     "Flood - CL": "Commercial",
     "General Liability": "Commercial",
-    "Inland Marine CL": "Commercial",
+    "Inland Marine - CL": "Commercial",
     "Marine Package": "Commercial",
     "Surety": "Commercial",
     "Workers Compensation": "Commercial",
@@ -82,7 +82,7 @@ def get_business_type_categories():
     
     # Specialty Lines
     "Golf Cart": "Specialty Lines",
-    "Inland Marine PL": "Specialty Lines",
+    "Inland Marine - PL": "Specialty Lines",
     "Motorcycle/ATV": "Specialty Lines",
     "Motorhome": "Specialty Lines",
     "Recreational Vehicle": "Specialty Lines",
